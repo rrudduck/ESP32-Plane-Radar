@@ -22,6 +22,10 @@ constexpr unsigned long kWifiConnectingFrameMs = 50;
 constexpr unsigned long kWifiDownGraceMs = 4000;
 /** Minimum interval between background reconnect tries. */
 constexpr unsigned long kWifiReconnectIntervalMs = 15000;
+/** Upper bound for a background reconnect attempt. */
+constexpr unsigned long kWifiQuickReconnectWaitMs = 2500;
+/** After repeated reconnect failures, power-cycle STA radio before retry. */
+constexpr uint8_t kWifiHardResetAfterFailures = 4;
 
 // --- BOOT button (ESP32-C3 Super Mini, active LOW) ---
 constexpr gpio_num_t kBootPin = GPIO_NUM_9;
@@ -50,6 +54,12 @@ constexpr double kDefaultRadarLon = 4.9041;
 
 /** Poll adsb.fi (API public limit: 1 req/s). */
 constexpr unsigned long kAdsbFetchIntervalMs = 3000;
+/** HTTPS connect timeout for ADS-B API. */
+constexpr unsigned long kAdsbConnectTimeoutMs = 1200;
+/** Total HTTP request/read timeout for ADS-B API. */
+constexpr unsigned long kAdsbRequestTimeoutMs = 2500;
+/** Safety cap for ADS-B response payload size. */
+constexpr size_t kAdsbMaxPayloadBytes = 65536;
 /** Legacy scale unused — fetch uses radar::fetchRadiusKm() to screen edge. */
 constexpr float kAdsbFetchRadiusScale = 1.0f;
 /** false = hide aircraft with alt_baro "ground"; true = show them too. */

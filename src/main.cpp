@@ -20,6 +20,9 @@ bool g_radar_visible = false;
 unsigned long g_wifi_down_since = 0;
 unsigned long g_last_reconnect_ms = 0;
 unsigned long g_last_adsb_fetch_ms = 0;
+unsigned long g_adsb_interval_ms = config::kAdsbFetchIntervalMs;
+
+constexpr unsigned long kAdsbBackoffMaxMs = 30000;
 
 void showRadarIfConnected() {
   if (WiFi.status() != WL_CONNECTED) {
@@ -53,9 +56,17 @@ void fetchAndDrawAircraft() {
   const float fetch_km = ui::radar::fetchRadiusKm();
   if (!services::adsb::fetchUpdate(services::location::lat(),
                                    services::location::lon(), fetch_km)) {
+    g_adsb_interval_ms =
+        g_adsb_interval_ms < kAdsbBackoffMaxMs / 2 ? g_adsb_interval_ms * 2
+                                                   : kAdsbBackoffMaxMs;
+    Serial.printf("adsb: fetch failed, backoff=%lu ms\n", g_adsb_interval_ms);
     handleBootButton();
     return;
   }
+  if (g_adsb_interval_ms != config::kAdsbFetchIntervalMs) {
+    Serial.println("adsb: fetch recovered");
+  }
+  g_adsb_interval_ms = config::kAdsbFetchIntervalMs;
   ui::radarDisplayRefreshAircraft();
   handleBootButton();
 }
@@ -109,7 +120,7 @@ void loop() {
     g_wifi_down_since = 0;
     if (!g_radar_visible) {
       showRadarIfConnected();
-    } else if (millis() - g_last_adsb_fetch_ms >= config::kAdsbFetchIntervalMs) {
+    } else if (millis() - g_last_adsb_fetch_ms >= g_adsb_interval_ms) {
       g_last_adsb_fetch_ms = millis();
       fetchAndDrawAircraft();
     }

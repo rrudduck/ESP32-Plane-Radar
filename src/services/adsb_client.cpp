@@ -15,12 +15,14 @@ namespace {
 
 constexpr char kApiBase[] = "https://opendata.adsb.fi/api/v3/lat/";
 constexpr float kKmPerNm = 1.852f;
-constexpr int kConnectAttemptMs = 200;
-constexpr unsigned long kRequestTimeoutMs = 10000;
 
 Aircraft s_aircraft[kMaxAircraft];
 size_t s_aircraft_count = 0;
 PollFn s_poll_fn = nullptr;
+
+bool timedOut(unsigned long deadline_ms) {
+  return static_cast<long>(millis() - deadline_ms) >= 0;
+}
 
 void pollNetwork() {
   if (s_poll_fn != nullptr) {
@@ -29,21 +31,8 @@ void pollNetwork() {
 }
 
 int performGetWithPoll(HTTPClient& http) {
-  http.setConnectTimeout(kConnectAttemptMs);
-  const unsigned long deadline = millis() + kRequestTimeoutMs;
-  while (millis() < deadline) {
-    pollNetwork();
-    const int code = http.GET();
-    if (code > 0) {
-      return code;
-    }
-    if (code != HTTPC_ERROR_CONNECTION_REFUSED &&
-        code != HTTPC_ERROR_NOT_CONNECTED) {
-      return code;
-    }
-    delay(5);
-  }
-  return HTTPC_ERROR_READ_TIMEOUT;
+  pollNetwork();
+  return http.GET();
 }
 
 bool readResponseBodyWithPoll(HTTPClient& http, String& payload) {
@@ -58,18 +47,23 @@ bool readResponseBodyWithPoll(HTTPClient& http, String& payload) {
   }
 
   uint8_t buffer[512];
-  const unsigned long deadline = millis() + kRequestTimeoutMs;
-  while (millis() < deadline) {
+  const unsigned long deadline = millis() + config::kAdsbRequestTimeoutMs;
+  while (!timedOut(deadline)) {
     pollNetwork();
     const int available = stream->available();
     if (available > 0) {
       const int to_read =
           available > static_cast<int>(sizeof(buffer)) ? static_cast<int>(sizeof(buffer))
                                                        : available;
-      const int read_bytes = stream->readBytes(buffer, to_read);
+      const int read_bytes = stream->read(buffer, to_read);
       if (read_bytes > 0) {
         payload.concat(reinterpret_cast<const char*>(buffer),
                        static_cast<unsigned>(read_bytes));
+        if (payload.length() > config::kAdsbMaxPayloadBytes) {
+          Serial.printf("adsb: payload too large (%u)\n",
+                        static_cast<unsigned>(payload.length()));
+          return false;
+        }
       }
     }
     if (content_length > 0 &&
@@ -79,7 +73,7 @@ bool readResponseBodyWithPoll(HTTPClient& http, String& payload) {
     if (!http.connected() && stream->available() <= 0) {
       break;
     }
-    delay(1);
+    delay(2);
   }
 
   return payload.length() > 0;
@@ -206,6 +200,10 @@ size_t aircraftCount() { return s_aircraft_count; }
 const Aircraft* aircraftList() { return s_aircraft; }
 
 bool fetchUpdate(double center_lat, double center_lon, float fetch_radius_km) {
+  if (WiFi.status() != WL_CONNECTED) {
+    return false;
+  }
+
   const float dist_nm = kmToNauticalMiles(fetch_radius_km);
 
   String url = kApiBase;
@@ -217,6 +215,7 @@ bool fetchUpdate(double center_lat, double center_lon, float fetch_radius_km) {
 
   WiFiClientSecure client;
   client.setInsecure();
+  client.setTimeout(config::kAdsbRequestTimeoutMs / 1000);
 
   HTTPClient http;
   if (!http.begin(client, url)) {
@@ -224,7 +223,8 @@ bool fetchUpdate(double center_lat, double center_lon, float fetch_radius_km) {
     return false;
   }
 
-  http.setTimeout(kRequestTimeoutMs);
+  http.setConnectTimeout(config::kAdsbConnectTimeoutMs);
+  http.setTimeout(config::kAdsbRequestTimeoutMs);
   const int code = performGetWithPoll(http);
   if (code != HTTP_CODE_OK) {
     Serial.printf("adsb: HTTP %d\n", code);

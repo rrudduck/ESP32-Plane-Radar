@@ -61,6 +61,7 @@ constexpr char kPrefsForcePortalKey[] = "portal";
 bool s_force_config_portal = false;
 WiFiManager s_wm;
 bool s_wm_configured = false;
+uint8_t s_quick_reconnect_failures = 0;
 
 void ensureWifiManager();
 void startLanWebPortal();
@@ -286,6 +287,18 @@ bool waitForLinkWithUi(const char* ssid_for_ui, unsigned long attempt_ms) {
   return wifiLinkUp();
 }
 
+bool waitForLinkQuick(unsigned long attempt_ms) {
+  const unsigned long deadline = millis() + attempt_ms;
+  while (static_cast<long>(millis() - deadline) < 0) {
+    if (wifiLinkUp()) {
+      return true;
+    }
+    bootButtonPollLongPress();
+    delay(20);
+  }
+  return wifiLinkUp();
+}
+
 bool tryConnectWithUi(const String& ssid, const String& pass, bool show_ui) {
   if (wifiLinkUp()) {
     return true;
@@ -412,7 +425,46 @@ void wifiResetCredentialsAndReboot() {
 bool wifiReconnect() {
   initBootButton();
   Serial.println("WiFi reconnecting...");
-  return connectSavedNetwork(true);
+  ensureWifiManager();
+  stopLanWebPortal();
+
+  if (wifiLinkUp()) {
+    s_quick_reconnect_failures = 0;
+    return true;
+  }
+
+  WiFi.setAutoReconnect(true);
+  WiFi.mode(WIFI_STA);
+  WiFi.reconnect();
+  if (waitForLinkQuick(config::kWifiQuickReconnectWaitMs)) {
+    s_quick_reconnect_failures = 0;
+    return true;
+  }
+
+  ++s_quick_reconnect_failures;
+  if (s_quick_reconnect_failures < config::kWifiHardResetAfterFailures) {
+    return false;
+  }
+
+  // If the STA stack gets stuck after repeated drops, cycle the radio once.
+  s_quick_reconnect_failures = 0;
+  Serial.println("WiFi reconnect hard-reset (radio cycle)");
+  WiFi.disconnect(true, true);
+  WiFi.mode(WIFI_OFF);
+  delay(100);
+
+  if (!storedWifiCredentials()) {
+    return false;
+  }
+
+  const String ssid = s_wm.getWiFiSSID();
+  const String pass = s_wm.getWiFiPass();
+  if (ssid.length() == 0) {
+    return false;
+  }
+
+  startStaConnect(ssid, pass);
+  return waitForLinkQuick(config::kWifiQuickReconnectWaitMs);
 }
 
 void wifiLoop() {
