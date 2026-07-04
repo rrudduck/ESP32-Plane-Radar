@@ -158,6 +158,22 @@ pio run -t upload
 pio device monitor
 ```
 
+### OTA upload (Wi-Fi)
+
+Once connected to Wi-Fi, firmware updates are available over ArduinoOTA on port 3232.
+
+```bash
+pio run -t upload --upload-protocol espota --upload-port plane-radar.local
+```
+
+If mDNS does not resolve, use the IP shown in serial logs:
+
+```bash
+pio run -t upload --upload-protocol espota --upload-port <device-ip>
+```
+
+OTA settings are in `include/config.h` (`kOtaEnabled`, `kOtaHostname`, `kOtaPassword`, `kOtaPort`).
+
 - PlatformIO env: **`supermini`**
 - Serial: **115200** baud
 - USB CDC on boot enabled in `platformio.ini` for the Super Mini

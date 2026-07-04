@@ -59,11 +59,20 @@ constexpr unsigned long kAdsbConnectTimeoutMs = 1200;
 /** Total HTTP request/read timeout for ADS-B API. */
 constexpr unsigned long kAdsbRequestTimeoutMs = 2500;
 /** Safety cap for ADS-B response payload size. */
-constexpr size_t kAdsbMaxPayloadBytes = 65536;
+constexpr size_t kAdsbMaxPayloadBytes = 24576;
+/** Skip parse when free heap is below this threshold. */
+constexpr size_t kAdsbMinFreeHeapBytes = 24000;
 /** Legacy scale unused — fetch uses radar::fetchRadiusKm() to screen edge. */
 constexpr float kAdsbFetchRadiusScale = 1.0f;
 /** false = hide aircraft with alt_baro "ground"; true = show them too. */
 constexpr bool kAdsbShowGroundAircraft = false;
+
+// --- OTA (ArduinoOTA over Wi-Fi, default port 3232) ---
+constexpr bool kOtaEnabled = true;
+constexpr char kOtaHostname[] = "plane-radar";
+/** Empty password keeps OTA open on local network only. */
+constexpr char kOtaPassword[] = "";
+constexpr uint16_t kOtaPort = 3232;
 
 // --- UI colors (RGB565) — status screens ---
 constexpr uint16_t kColorBlack = 0x0000;

@@ -1,5 +1,6 @@
 #include "services/adsb_client.h"
 
+#include <Arduino.h>
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
 
@@ -42,13 +43,26 @@ bool readResponseBodyWithPoll(HTTPClient& http, String& payload) {
   }
 
   const int content_length = http.getSize();
+  if (content_length > static_cast<int>(config::kAdsbMaxPayloadBytes)) {
+    Serial.printf("adsb: content-length too large (%d)\n", content_length);
+    return false;
+  }
+
   if (content_length > 0) {
-    payload.reserve(static_cast<unsigned>(content_length + 1));
+    const int reserve_size =
+        content_length < static_cast<int>(config::kAdsbMaxPayloadBytes)
+            ? content_length
+            : static_cast<int>(config::kAdsbMaxPayloadBytes);
+    payload.reserve(static_cast<unsigned>(reserve_size + 1));
   }
 
   uint8_t buffer[512];
   const unsigned long deadline = millis() + config::kAdsbRequestTimeoutMs;
   while (!timedOut(deadline)) {
+    if (WiFi.status() != WL_CONNECTED) {
+      return false;
+    }
+
     pollNetwork();
     const int available = stream->available();
     if (available > 0) {
@@ -240,8 +254,33 @@ bool fetchUpdate(double center_lat, double center_lon, float fetch_radius_km) {
   }
   http.end();
 
+  if (ESP.getFreeHeap() < config::kAdsbMinFreeHeapBytes) {
+    Serial.printf("adsb: low heap (%u)\n", static_cast<unsigned>(ESP.getFreeHeap()));
+    return false;
+  }
+
+  JsonDocument filter;
+  JsonObject root = filter.to<JsonObject>();
+  JsonArray ac_filter = root["ac"].to<JsonArray>();
+  JsonObject plane_filter = ac_filter.add<JsonObject>();
+  plane_filter["lat"] = true;
+  plane_filter["lon"] = true;
+  plane_filter["true_heading"] = true;
+  plane_filter["mag_heading"] = true;
+  plane_filter["track"] = true;
+  plane_filter["dir"] = true;
+  plane_filter["gs"] = true;
+  plane_filter["tas"] = true;
+  plane_filter["ias"] = true;
+  plane_filter["alt_baro"] = true;
+  plane_filter["alt_geom"] = true;
+  plane_filter["flight"] = true;
+  plane_filter["hex"] = true;
+  plane_filter["t"] = true;
+
   JsonDocument doc;
-  const DeserializationError err = deserializeJson(doc, payload);
+  const DeserializationError err =
+      deserializeJson(doc, payload, DeserializationOption::Filter(filter));
   if (err) {
     Serial.printf("adsb: JSON parse error: %s\n", err.c_str());
     return false;
