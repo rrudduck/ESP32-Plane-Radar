@@ -19,6 +19,7 @@ constexpr size_t kMaxAircraft = 64;
 
 size_t aircraftCount();
 const Aircraft* aircraftList();
+void clearAircraft();
 
 /** Hook invoked during long HTTP I/O (e.g. wifiLoop). Optional. */
 using PollFn = void (*)();

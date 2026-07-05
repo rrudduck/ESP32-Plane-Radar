@@ -6,6 +6,7 @@
 
 #include <ArduinoJson.h>
 
+#include <cstdio>
 #include <cstring>
 
 #include "config.h"
@@ -53,7 +54,10 @@ bool readResponseBodyWithPoll(HTTPClient& http, String& payload) {
         content_length < static_cast<int>(config::kAdsbMaxPayloadBytes)
             ? content_length
             : static_cast<int>(config::kAdsbMaxPayloadBytes);
-    payload.reserve(static_cast<unsigned>(reserve_size + 1));
+    if (!payload.reserve(static_cast<unsigned>(reserve_size + 1))) {
+      Serial.println("adsb: payload reserve failed");
+      return false;
+    }
   }
 
   uint8_t buffer[512];
@@ -213,19 +217,18 @@ size_t aircraftCount() { return s_aircraft_count; }
 
 const Aircraft* aircraftList() { return s_aircraft; }
 
+void clearAircraft() { s_aircraft_count = 0; }
+
 bool fetchUpdate(double center_lat, double center_lon, float fetch_radius_km) {
   if (WiFi.status() != WL_CONNECTED) {
     return false;
   }
 
   const float dist_nm = kmToNauticalMiles(fetch_radius_km);
-
-  String url = kApiBase;
-  url += String(center_lat, 6);
-  url += "/lon/";
-  url += String(center_lon, 6);
-  url += "/dist/";
-  url += String(dist_nm, 1);
+  char url[196];
+  snprintf(url, sizeof(url), "%s%.6f/lon/%.6f/dist/%.1f", kApiBase,
+           static_cast<float>(center_lat), static_cast<float>(center_lon),
+           dist_nm);
 
   WiFiClientSecure client;
   client.setInsecure();

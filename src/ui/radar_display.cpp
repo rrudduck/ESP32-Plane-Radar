@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 
 #include "config.h"
@@ -54,6 +55,8 @@ int s_scale_label_h = 0;
 lgfx::LovyanGFX* s_draw = &tft;
 LGFX_Sprite s_frame(&tft);
 bool s_frame_ready = false;
+bool s_stale_data = false;
+unsigned long s_stale_age_sec = 0;
 
 class DrawScope {
  public:
@@ -677,6 +680,17 @@ void renderFrame() {
   {
     const DrawScope scope(s_frame);
     drawAircraft();
+    if (s_stale_data) {
+      applyScaleStyle();
+      s_draw->setTextDatum(textdatum_t::top_left);
+      s_draw->setTextColor(radar::kColorTagAltitude, radar::kColorBackground);
+      char stale_label[26];
+      snprintf(stale_label, sizeof(stale_label), "STALE %lus", s_stale_age_sec);
+      const int tw = s_draw->textWidth(stale_label);
+      const int th = s_draw->fontHeight();
+      s_draw->fillRect(2, 2, tw + 8, th + 4, radar::kColorBackground);
+      s_draw->drawString(stale_label, 6, 4);
+    }
   }
   s_frame.pushSprite(0, 0);
   tft.setTextDatum(textdatum_t::top_left);
@@ -709,6 +723,11 @@ void radarDisplayRefreshAircraft() {
   }
 
   radarDisplayDraw();
+}
+
+void radarDisplaySetStale(bool stale, unsigned long age_seconds) {
+  s_stale_data = stale;
+  s_stale_age_sec = age_seconds;
 }
 
 }  // namespace ui

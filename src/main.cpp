@@ -24,12 +24,16 @@ unsigned long g_last_adsb_fetch_ms = 0;
 unsigned long g_adsb_interval_ms = config::kAdsbFetchIntervalMs;
 unsigned long g_last_adsb_success_ms = 0;
 unsigned long g_last_wifi_kick_ms = 0;
+unsigned long g_last_heap_log_ms = 0;
 uint8_t g_adsb_failures = 0;
+bool g_adsb_cleared_stale = false;
 
 constexpr unsigned long kAdsbBackoffMaxMs = 30000;
 constexpr unsigned long kAdsbStaleKickMs = 90000;
 constexpr unsigned long kWifiKickIntervalMs = 30000;
+constexpr unsigned long kHeapLogIntervalMs = 60000;
 constexpr uint8_t kAdsbFailureKickThreshold = 4;
+constexpr uint8_t kAdsbFailureClearThreshold = 6;
 
 void showRadarIfConnected() {
   if (WiFi.status() != WL_CONNECTED) {
@@ -74,13 +78,20 @@ void fetchAndDrawAircraft() {
         g_adsb_failures >= kAdsbFailureKickThreshold && kick_allowed) {
       g_last_wifi_kick_ms = millis();
       Serial.println("adsb: repeated failures, requesting WiFi reconnect");
-      WiFi.reconnect();
+      wifiReconnect();
+    }
+
+    if (!g_adsb_cleared_stale && g_adsb_failures >= kAdsbFailureClearThreshold) {
+      g_adsb_cleared_stale = true;
+      services::adsb::clearAircraft();
+      ui::radarDisplayRefreshAircraft();
     }
     handleBootButton();
     return;
   }
 
   g_adsb_failures = 0;
+  g_adsb_cleared_stale = false;
   g_last_adsb_success_ms = millis();
   if (g_adsb_interval_ms != config::kAdsbFetchIntervalMs) {
     Serial.println("adsb: fetch recovered");
@@ -139,13 +150,24 @@ void loop() {
   } else {
     g_wifi_down_since = 0;
 
+    if (millis() - g_last_heap_log_ms >= kHeapLogIntervalMs) {
+      g_last_heap_log_ms = millis();
+      Serial.printf("heap: free=%u min=%u\n", static_cast<unsigned>(ESP.getFreeHeap()),
+                    static_cast<unsigned>(ESP.getMinFreeHeap()));
+    }
+
     if (g_last_adsb_success_ms != 0 &&
         millis() - g_last_adsb_success_ms >= kAdsbStaleKickMs &&
         millis() - g_last_wifi_kick_ms >= kWifiKickIntervalMs) {
       g_last_wifi_kick_ms = millis();
       Serial.println("adsb: stale data window exceeded, requesting WiFi reconnect");
-      WiFi.reconnect();
+      wifiReconnect();
     }
+
+    const bool stale =
+        g_last_adsb_success_ms != 0 && millis() - g_last_adsb_success_ms >= kAdsbStaleKickMs;
+    const unsigned long stale_s = stale ? (millis() - g_last_adsb_success_ms) / 1000UL : 0;
+    ui::radarDisplaySetStale(stale, stale_s);
 
     if (!g_radar_visible) {
       showRadarIfConnected();
