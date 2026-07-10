@@ -470,7 +470,8 @@ bool wifiReconnect() {
 void wifiLoop() {
   ensureWifiManager();
   if (wifiLinkUp()) {
-    if (!s_wm.getWebPortalActive() && !s_wm.getConfigPortalActive()) {
+    if (config::kWifiLanPortalAutoStart && !s_wm.getWebPortalActive() &&
+        !s_wm.getConfigPortalActive()) {
       startLanWebPortal();
     }
     if (s_wm.getWebPortalActive() || s_wm.getConfigPortalActive()) {

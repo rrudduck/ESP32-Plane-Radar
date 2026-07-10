@@ -5,6 +5,8 @@
 #include <Arduino.h>
 #include <WiFi.h>
 
+#include <esp_system.h>
+
 #include "config.h"
 #include "hardware/display.h"
 #include "services/adsb_client.h"
@@ -84,8 +86,11 @@ void fetchAndDrawAircraft() {
     if (!g_adsb_cleared_stale && g_adsb_failures >= kAdsbFailureClearThreshold) {
       g_adsb_cleared_stale = true;
       services::adsb::clearAircraft();
-      ui::radarDisplayRefreshAircraft();
     }
+
+    // Redraw even on failure so stale-state UI keeps updating instead of
+    // appearing visually frozen while backoff/reconnect logic runs.
+    ui::radarDisplayRefreshAircraft();
     handleBootButton();
     return;
   }
@@ -162,6 +167,13 @@ void loop() {
       g_last_wifi_kick_ms = millis();
       Serial.println("adsb: stale data window exceeded, requesting WiFi reconnect");
       wifiReconnect();
+    }
+
+    if (g_last_adsb_success_ms != 0 &&
+        millis() - g_last_adsb_success_ms >= config::kAdsbRestartAfterStaleMs) {
+      Serial.println("adsb: prolonged stale window, restarting device");
+      delay(100);
+      esp_restart();
     }
 
     const bool stale =
